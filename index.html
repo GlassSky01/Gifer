@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gifer</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.5 "Segoe UI", system-ui, "Microsoft YaHei", sans-serif;
+    background: #14161a; color: #d8dce3; overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* 左容器（添加 + 列表 + 清空） | 右容器（参数 + 舞台 + 操作） */
+  .app { height: 100%; display: grid; grid-template-columns: 216px 1fr; }
+
+  /* ---------- 按钮 ---------- */
+  .btn {
+    font: inherit; color: #d8dce3; background: #262b33; border: 1px solid #333a45;
+    border-radius: 6px; padding: 6px 14px; cursor: pointer; transition: .12s;
+    white-space: nowrap;
+  }
+  .btn:hover:not(:disabled) { background: #2f3641; border-color: #3f4855; }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn:disabled { opacity: .38; cursor: not-allowed; }
+  .btn.primary { background: #2b6cf6; border-color: #2b6cf6; color: #fff; font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { background: #3b7bff; border-color: #3b7bff; }
+  .btn.small { padding: 4px 12px; font-size: 12px; }
+
+  /* ---------- 左容器 ---------- */
+  .side {
+    display: flex; flex-direction: column; min-height: 0;
+    background: #171a1f; border-right: 1px solid #23272f;
+  }
+  .side-head {
+    flex: none; padding: 10px 8px; display: flex; align-items: center;
+    justify-content: center; gap: 8px; border-bottom: 1px solid #23272f;
+  }
+  .side-head .btn.primary { min-width: 104px; }
+
+  .list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .list:empty::after {
+    content: "还没有图片";
+    display: block; text-align: center; color: #5a6373; padding: 24px 0; font-size: 12px;
+  }
+  .item {
+    position: relative; height: 62px; border-radius: 6px; overflow: hidden;
+    background: #20242b; border: 1px solid #2a2f38; cursor: grab;
+    display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+    transition: border-color .12s, opacity .12s;
+  }
+  .item:hover { border-color: #3f4855; }
+  .item.dragging { opacity: .35; }
+  .item.over { border-color: #2b6cf6; }
+  .item img {
+    height: 100%; width: 100px; object-fit: contain; border-radius: 4px;
+    background: #0e1013; pointer-events: none; flex: none;
+  }
+  .item .num {
+    flex: none; width: 18px; text-align: center; font-size: 11px;
+    color: #6b7686; font-variant-numeric: tabular-nums;
+  }
+  .item .name {
+    flex: 1; min-width: 0; font-size: 11px; color: #8b95a5;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .item .del {
+    position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; line-height: 16px;
+    border: 0; border-radius: 4px; background: rgba(10,12,15,.75); color: #aab3c0;
+    font-size: 14px; cursor: pointer; opacity: 0; transition: .12s; padding: 0;
+  }
+  .item:hover .del { opacity: 1; }
+  .item .del:hover { background: #e5484d; color: #fff; }
+
+  /* ---------- 右容器 ---------- */
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+  .options {
+    flex: none; display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+    padding: 8px 14px; background: #171a1f; border-bottom: 1px solid #23272f;
+    font-size: 12px; color: #8b95a5;
+  }
+  .options label { display: flex; align-items: center; gap: 8px; }
+  .options input[type=range] { width: 110px; accent-color: #2b6cf6; }
+  .options .val { color: #d8dce3; font-variant-numeric: tabular-nums; min-width: 46px; }
+  .options select {
+    font: inherit; color: #d8dce3; background: #262b33; border: 1px solid #333a45;
+    border-radius: 5px; padding: 3px 6px;
+  }
+  .summary {
+    margin-left: auto; color: #8b95a5;
+    font-variant-numeric: tabular-nums; font-size: 12px;
+  }
+  .summary b { color: #d8dce3; font-weight: 600; }
+
+  .stage {
+    position: relative; flex: 1; min-width: 0; min-height: 0; display: flex;
+    align-items: center; justify-content: center; padding: 18px; overflow: hidden;
+  }
+  .stage canvas {
+    max-width: 100%; max-height: 100%; display: block;
+    box-shadow: 0 6px 28px rgba(0,0,0,.55); border-radius: 2px;
+    background: #0e1013;
+  }
+  .stage canvas.hidden { display: none; }
+  .hint {
+    position: absolute; color: #4e5765; font-size: 13px; text-align: center;
+    line-height: 2; pointer-events: none; padding: 0 24px;
+  }
+  .hint.hidden { display: none; }
+  .status {
+    position: absolute; left: 18px; bottom: 12px; color: #8b95a5;
+    font-size: 12px; font-variant-numeric: tabular-nums; pointer-events: none;
+  }
+  .status.warn { color: #e8a33d; }
+  .status.error { color: #e5484d; }
+
+  /* 预览 / 保存 放在右容器上侧，水平居中 */
+  .actions {
+    flex: none; display: flex; justify-content: center; align-items: center; gap: 10px;
+    padding: 12px; background: #171a1f; border-bottom: 1px solid #23272f;
+  }
+  .actions .btn { padding: 7px 22px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- 左容器：添加 + 清空 + 图片列表 -->
+  <aside class="side">
+    <div class="side-head">
+      <button id="btnAdd" class="btn primary">添加</button>
+      <button id="btnClear" class="btn small" disabled>清空</button>
+    </div>
+    <div id="list" class="list"></div>
+  </aside>
+
+  <!-- 右容器：预览/保存 + 参数 + 预览图 -->
+  <main class="main">
+    <div class="actions">
+      <button id="btnPreview" class="btn" disabled>预览</button>
+      <button id="btnSave" class="btn primary" disabled>保存</button>
+    </div>
+
+    <div class="options">
+      <label>过渡
+        <input id="optTransition" type="range" min="200" max="2000" step="100" value="700">
+        <span class="val" id="valTransition">700ms</span>
+      </label>
+      <label>停留
+        <input id="optHold" type="range" min="0" max="3000" step="100" value="700">
+        <span class="val" id="valHold">700ms</span>
+      </label>
+      <label>目标体积
+        <input id="optLimit" type="range" min="0" max="30" step="1" value="10">
+        <span class="val" id="valLimit">1.0MB</span>
+      </label>
+      <label>留边背景
+        <select id="optBg">
+          <option value="white">纯白</option>
+          <option value="black">纯黑</option>
+          <option value="auto">首图主色</option>
+        </select>
+      </label>
+      <div id="summary" class="summary">还没有图片</div>
+    </div>
+
+    <div class="stage" id="stage">
+      <canvas id="canvas" class="hidden"></canvas>
+      <div id="hint" class="hint">
+        点击「添加」选图，或把图片拖到左侧列表<br>也可以直接 Ctrl+V 粘贴
+      </div>
+      <div id="status" class="status"></div>
+    </div>
+  </main>
+
+</div>
+
+<input id="file" type="file" accept="image/*" multiple hidden>
+<script src="gif.js"></script>
+<script src="render.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
